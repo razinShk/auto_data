@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Trash2, Camera, FileText, Download, Archive, Cloud, HardDrive, AlertCircle, Plus, Upload, Eye, EyeOff, RefreshCw, FileSpreadsheet, Save, GripVertical, ChevronUp, ChevronDown, Search, Filter, X, ZoomIn, FolderOpen, Video, ArrowLeft } from "lucide-react";
+import { Trash2, Camera, FileText, Download, Archive, Cloud, HardDrive, AlertCircle, Plus, Upload, Eye, EyeOff, RefreshCw, FileSpreadsheet, Save, GripVertical, ChevronUp, ChevronDown, Search, Filter, X, ZoomIn, FolderOpen, Video, ArrowLeft, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useProject } from "@/contexts/ProjectContext";
 import { supabase } from "@/integrations/supabase/client";
@@ -39,6 +39,13 @@ interface DragItem {
   index: number;
 }
 
+interface PhotoDragItem {
+  type: 'photo';
+  rowId: string;
+  photoType: 'before' | 'after';
+  photoUrl: string;
+}
+
 const DraggableRow: React.FC<{
   row: RowData;
   index: number;
@@ -48,10 +55,12 @@ const DraggableRow: React.FC<{
   handleAfterPhotoChange: (id: string, e: React.ChangeEvent<HTMLInputElement>) => void;
   handleSaveRow: (id: string) => void;
   handleDeleteRow: (id: string) => void;
+  handleDeletePhoto: (id: string, photoType: 'before' | 'after') => void;
+  handleSwapPhotos: (id: string) => void;
   rowRef: React.RefObject<HTMLDivElement>;
-  onImagePreview: (imageUrl: string) => void;
-  onTextPreview: (content: string, title: string) => void;
-}> = ({ row, index, moveRow, updateRow, handleBeforePhotoChange, handleAfterPhotoChange, handleSaveRow, handleDeleteRow, rowRef, onImagePreview, onTextPreview }) => {
+  onImagePreview: (imageUrl: string, type: 'before' | 'after', rowId: string) => void;
+  onTextPreview: (content: string, title: string, rowId: string, field: keyof RowData) => void;
+}> = ({ row, index, moveRow, updateRow, handleBeforePhotoChange, handleAfterPhotoChange, handleSaveRow, handleDeleteRow, handleDeletePhoto, handleSwapPhotos, rowRef, onImagePreview, onTextPreview }) => {
   
   const [{ isDragging }, drag] = useDrag({
     type: 'row',
@@ -59,6 +68,24 @@ const DraggableRow: React.FC<{
     collect: (monitor) => ({
       isDragging: monitor.isDragging(),
     }),
+  });
+
+  const [{ isDraggingBefore }, dragBefore] = useDrag({
+    type: 'photo',
+    item: { type: 'photo', rowId: row.id, photoType: 'before', photoUrl: row.beforePhotoPreview },
+    collect: (monitor) => ({
+      isDraggingBefore: monitor.isDragging(),
+    }),
+    canDrag: !!row.beforePhotoPreview,
+  });
+
+  const [{ isDraggingAfter }, dragAfter] = useDrag({
+    type: 'photo',
+    item: { type: 'photo', rowId: row.id, photoType: 'after', photoUrl: row.afterPhotoPreview },
+    collect: (monitor) => ({
+      isDraggingAfter: monitor.isDragging(),
+    }),
+    canDrag: !!row.afterPhotoPreview,
   });
 
   const [, drop] = useDrop({
@@ -74,6 +101,42 @@ const DraggableRow: React.FC<{
       moveRow(dragIndex, hoverIndex);
       item.index = hoverIndex;
     },
+  });
+
+  const [{ isOverBefore }, dropBefore] = useDrop({
+    accept: 'photo',
+    drop: (item: PhotoDragItem) => {
+      if (item.rowId === row.id && item.photoType === 'before') return;
+      
+      if (item.rowId === row.id && item.photoType === 'after') {
+        // Swap photos within the same row
+        handleSwapPhotos(row.id);
+      } else {
+        // Handle cross-row photo drag (you can implement this logic)
+        console.log('Cross-row photo drag not implemented yet');
+      }
+    },
+    collect: (monitor) => ({
+      isOverBefore: monitor.isOver(),
+    }),
+  });
+
+  const [{ isOverAfter }, dropAfter] = useDrop({
+    accept: 'photo',
+    drop: (item: PhotoDragItem) => {
+      if (item.rowId === row.id && item.photoType === 'after') return;
+      
+      if (item.rowId === row.id && item.photoType === 'before') {
+        // Swap photos within the same row
+        handleSwapPhotos(row.id);
+      } else {
+        // Handle cross-row photo drag (you can implement this logic)
+        console.log('Cross-row photo drag not implemented yet');
+      }
+    },
+    collect: (monitor) => ({
+      isOverAfter: monitor.isOver(),
+    }),
   });
 
   return (
@@ -107,7 +170,7 @@ const DraggableRow: React.FC<{
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onTextPreview(row.srno, 'SR No')}
+              onClick={() => onTextPreview(row.srno, 'SR No', row.id, 'srno')}
               className="h-6 w-6 p-0 hover:bg-gray-100"
               title="View full content"
             >
@@ -116,7 +179,7 @@ const DraggableRow: React.FC<{
           </div>
         </div>
 
-        {/* Part Name */}
+        {/* Part Number */}
         <div className="p-2 sm:p-3 border-r border-gray-300 flex items-center">
           <div className="flex-1 flex items-center gap-1">
             <Input
@@ -124,12 +187,12 @@ const DraggableRow: React.FC<{
               value={row.partName}
               onChange={(e) => updateRow(row.id, 'partName', e.target.value)}
               className="w-full border-0 bg-transparent focus:ring-0 text-xs sm:text-sm p-1 sm:p-2"
-              placeholder="Part Name"
+              placeholder="Part Number"
             />
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onTextPreview(row.partName, 'Part Name')}
+              onClick={() => onTextPreview(row.partName, 'Part Number', row.id, 'partName')}
               className="h-6 w-6 p-0 hover:bg-gray-100"
               title="View full content"
             >
@@ -151,7 +214,7 @@ const DraggableRow: React.FC<{
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onTextPreview(row.opNumber, 'Operation Number')}
+              onClick={() => onTextPreview(row.opNumber, 'Operation Number', row.id, 'opNumber')}
               className="h-6 w-6 p-0 hover:bg-gray-100"
               title="View full content"
             >
@@ -173,7 +236,7 @@ const DraggableRow: React.FC<{
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onTextPreview(row.observation, 'Observation')}
+              onClick={() => onTextPreview(row.observation, 'Observation', row.id, 'observation')}
               className="h-6 w-6 p-0 hover:bg-gray-100"
               title="View full content"
             >
@@ -183,7 +246,12 @@ const DraggableRow: React.FC<{
         </div>
 
         {/* Before Photo */}
-        <div className="p-2 sm:p-3 border-r border-gray-300 flex flex-col items-center justify-center space-y-1">
+        <div 
+          ref={dropBefore}
+          className={`p-2 sm:p-3 border-r border-gray-300 flex flex-col items-center justify-center space-y-1 transition-all ${
+            isOverBefore ? 'bg-blue-50 border-blue-300' : ''
+          }`}
+        >
           <div className="flex gap-1">
             <div className="relative">
               <input
@@ -196,6 +264,7 @@ const DraggableRow: React.FC<{
                 variant="outline"
                 size="sm"
                 className="h-6 sm:h-7 text-xs border-blue-300 hover:bg-blue-50 px-1"
+                title="Upload from device"
               >
                 <FolderOpen className="h-3 w-3" />
               </Button>
@@ -212,30 +281,68 @@ const DraggableRow: React.FC<{
                 variant="outline"
                 size="sm"
                 className="h-6 sm:h-7 text-xs border-blue-300 hover:bg-blue-50 px-1"
+                title="Take photo"
               >
                 <Video className="h-3 w-3" />
               </Button>
             </div>
           </div>
           {row.beforePhotoPreview && (
-            <div className="relative cursor-pointer" onClick={() => onImagePreview(row.beforePhotoPreview)}>
-              <img
-                src={row.beforePhotoPreview}
-                alt="Before"
-                className="w-8 h-8 sm:w-10 sm:h-10 object-cover rounded border hover:opacity-80 transition-opacity"
-              />
-              <div className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs px-1 rounded text-[10px]">
-                BEFORE
+            <div className="space-y-1">
+              <div 
+                ref={dragBefore}
+                className={`relative cursor-pointer ${isDraggingBefore ? 'opacity-50' : ''}`}
+                onClick={() => onImagePreview(row.beforePhotoPreview, 'before', row.id)}
+              >
+                <img
+                  src={row.beforePhotoPreview}
+                  alt="Before"
+                  className="w-8 h-8 sm:w-10 sm:h-10 object-cover rounded border hover:opacity-80 transition-opacity"
+                />
+                <div className="absolute -top-1 -right-1 bg-blue-500 text-white text-xs px-1 rounded text-[10px]">
+                  BEFORE
+                </div>
+                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-20 transition-all">
+                  <ZoomIn className="h-4 w-4 text-white opacity-0 hover:opacity-100" />
+                </div>
               </div>
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-20 transition-all">
-                <ZoomIn className="h-4 w-4 text-white opacity-0 hover:opacity-100" />
+              <div className="flex gap-1 justify-center">
+                <Button
+                  onClick={() => handleSwapPhotos(row.id)}
+                  variant="outline"
+                  size="sm"
+                  className="h-5 w-5 p-0 border-orange-300 hover:bg-orange-50"
+                  title="Swap with after photo"
+                  disabled={!row.afterPhotoPreview}
+                >
+                  <RotateCcw className="h-2 w-2 text-orange-600" />
+                </Button>
+                <Button
+                  onClick={() => handleDeletePhoto(row.id, 'before')}
+                  variant="outline"
+                  size="sm"
+                  className="h-5 w-5 p-0 border-red-300 hover:bg-red-50"
+                  title="Delete photo"
+                >
+                  <X className="h-2 w-2 text-red-600" />
+                </Button>
               </div>
+            </div>
+          )}
+          {isOverBefore && (
+            <div className="absolute inset-0 bg-blue-100 bg-opacity-50 flex items-center justify-center">
+              <div className="text-xs text-blue-600 font-medium">Drop here</div>
             </div>
           )}
         </div>
 
         {/* After Photo */}
-        <div className="p-2 sm:p-3 border-r border-gray-300 flex flex-col items-center justify-center space-y-1">
+        <div 
+          ref={dropAfter}
+          className={`p-2 sm:p-3 border-r border-gray-300 flex flex-col items-center justify-center space-y-1 transition-all ${
+            isOverAfter ? 'bg-green-50 border-green-300' : ''
+          }`}
+        >
           <div className="flex gap-1">
             <div className="relative">
               <input
@@ -248,6 +355,7 @@ const DraggableRow: React.FC<{
                 variant="outline"
                 size="sm"
                 className="h-6 sm:h-7 text-xs border-green-300 hover:bg-green-50 px-1"
+                title="Upload from device"
               >
                 <FolderOpen className="h-3 w-3" />
               </Button>
@@ -264,24 +372,57 @@ const DraggableRow: React.FC<{
                 variant="outline"
                 size="sm"
                 className="h-6 sm:h-7 text-xs border-green-300 hover:bg-green-50 px-1"
+                title="Take photo"
               >
                 <Video className="h-3 w-3" />
               </Button>
             </div>
           </div>
           {row.afterPhotoPreview && (
-            <div className="relative cursor-pointer" onClick={() => onImagePreview(row.afterPhotoPreview)}>
-              <img
-                src={row.afterPhotoPreview}
-                alt="After"
-                className="w-8 h-8 sm:w-10 sm:h-10 object-cover rounded border hover:opacity-80 transition-opacity"
-              />
-              <div className="absolute -top-1 -right-1 bg-green-500 text-white text-xs px-1 rounded text-[10px]">
-                AFTER
+            <div className="space-y-1">
+              <div 
+                ref={dragAfter}
+                className={`relative cursor-pointer ${isDraggingAfter ? 'opacity-50' : ''}`}
+                onClick={() => onImagePreview(row.afterPhotoPreview, 'after', row.id)}
+              >
+                <img
+                  src={row.afterPhotoPreview}
+                  alt="After"
+                  className="w-8 h-8 sm:w-10 sm:h-10 object-cover rounded border hover:opacity-80 transition-opacity"
+                />
+                <div className="absolute -top-1 -right-1 bg-green-500 text-white text-xs px-1 rounded text-[10px]">
+                  AFTER
+                </div>
+                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-20 transition-all">
+                  <ZoomIn className="h-4 w-4 text-white opacity-0 hover:opacity-100" />
+                </div>
               </div>
-              <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-0 hover:bg-opacity-20 transition-all">
-                <ZoomIn className="h-4 w-4 text-white opacity-0 hover:opacity-100" />
+              <div className="flex gap-1 justify-center">
+                <Button
+                  onClick={() => handleSwapPhotos(row.id)}
+                  variant="outline"
+                  size="sm"
+                  className="h-5 w-5 p-0 border-orange-300 hover:bg-orange-50"
+                  title="Swap with before photo"
+                  disabled={!row.beforePhotoPreview}
+                >
+                  <RotateCcw className="h-2 w-2 text-orange-600" />
+                </Button>
+                <Button
+                  onClick={() => handleDeletePhoto(row.id, 'after')}
+                  variant="outline"
+                  size="sm"
+                  className="h-5 w-5 p-0 border-red-300 hover:bg-red-50"
+                  title="Delete photo"
+                >
+                  <X className="h-2 w-2 text-red-600" />
+                </Button>
               </div>
+            </div>
+          )}
+          {isOverAfter && (
+            <div className="absolute inset-0 bg-green-100 bg-opacity-50 flex items-center justify-center">
+              <div className="text-xs text-green-600 font-medium">Drop here</div>
             </div>
           )}
         </div>
@@ -299,7 +440,7 @@ const DraggableRow: React.FC<{
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onTextPreview(row.actionPlan, 'Action Plan')}
+              onClick={() => onTextPreview(row.actionPlan, 'Action Plan', row.id, 'actionPlan')}
               className="h-6 w-6 p-0 hover:bg-gray-100"
               title="View full content"
             >
@@ -321,7 +462,7 @@ const DraggableRow: React.FC<{
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onTextPreview(row.responsibility, 'Responsibility')}
+              onClick={() => onTextPreview(row.responsibility, 'Responsibility', row.id, 'responsibility')}
               className="h-6 w-6 p-0 hover:bg-gray-100"
               title="View full content"
             >
@@ -343,7 +484,7 @@ const DraggableRow: React.FC<{
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => onTextPreview(row.remarks, 'Remarks')}
+              onClick={() => onTextPreview(row.remarks, 'Remarks', row.id, 'remarks')}
               className="h-6 w-6 p-0 hover:bg-gray-100"
               title="View full content"
             >
@@ -388,12 +529,13 @@ const MultiRowDataEntry = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterResponsibility, setFilterResponsibility] = useState('all');
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewImage, setPreviewImage] = useState<{url: string, type: 'before' | 'after', rowId: string} | null>(null);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [hasJustSynced, setHasJustSynced] = useState(false);
   const [isLoadingFromDatabase, setIsLoadingFromDatabase] = useState(false);
-  const [textPreview, setTextPreview] = useState<{content: string, title: string} | null>(null);
+  const [textPreview, setTextPreview] = useState<{content: string, title: string, rowId: string, field: keyof RowData} | null>(null);
   const [isTextPreviewOpen, setIsTextPreviewOpen] = useState(false);
+  const [isViewMode, setIsViewMode] = useState(false);
   const tableRef = useRef<HTMLDivElement>(null);
   const newRowRef = useRef<HTMLDivElement>(null);
   
@@ -442,14 +584,56 @@ const MultiRowDataEntry = () => {
     setFilterResponsibility('all');
   };
 
-  const handleImagePreview = (imageUrl: string) => {
-    setPreviewImage(imageUrl);
+  const handleImagePreview = (imageUrl: string, type: 'before' | 'after', rowId: string) => {
+    setPreviewImage({ url: imageUrl, type, rowId });
     setIsPreviewOpen(true);
   };
 
-  const handleTextPreview = (content: string, title: string) => {
-    setTextPreview({ content, title });
+  const handleDownloadImage = async () => {
+    if (!previewImage) return;
+
+    try {
+      const response = await fetch(previewImage.url);
+      const blob = await response.blob();
+      
+      // Create a temporary URL for the blob
+      const url = window.URL.createObjectURL(blob);
+      
+      // Create a temporary anchor element and trigger download
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${previewImage.type}-photo-${previewImage.rowId}-${Date.now()}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      
+      // Cleanup
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Download Started",
+        description: `${previewImage.type === 'before' ? 'Before' : 'After'} photo download started`,
+      });
+    } catch (error) {
+      console.error('Error downloading image:', error);
+      toast({
+        title: "Download Failed", 
+        description: "Failed to download image. Please try again.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleTextPreview = (content: string, title: string, rowId: string, field: keyof RowData) => {
+    setTextPreview({ content, title, rowId, field });
     setIsTextPreviewOpen(true);
+  };
+
+  const handleTextPreviewChange = (newContent: string) => {
+    if (textPreview) {
+      setTextPreview({ ...textPreview, content: newContent });
+      updateRow(textPreview.rowId, textPreview.field, newContent);
+    }
   };
 
   // Load existing entries when project changes
@@ -840,6 +1024,46 @@ const MultiRowDataEntry = () => {
     toast({
       title: "Row Deleted",
       description: "Entry removed successfully",
+    });
+  };
+
+  const handleDeletePhoto = (id: string, photoType: 'before' | 'after') => {
+    setRows(prevRows =>
+      prevRows.map(row =>
+        row.id === id 
+          ? { 
+              ...row, 
+              [photoType === 'before' ? 'beforePhoto' : 'afterPhoto']: null,
+              [photoType === 'before' ? 'beforePhotoPreview' : 'afterPhotoPreview']: ''
+            }
+          : row
+      )
+    );
+
+    toast({
+      title: "Photo Deleted",
+      description: `${photoType === 'before' ? 'Before' : 'After'} photo removed successfully`,
+    });
+  };
+
+  const handleSwapPhotos = (id: string) => {
+    setRows(prevRows =>
+      prevRows.map(row =>
+        row.id === id 
+          ? { 
+              ...row, 
+              beforePhoto: row.afterPhoto,
+              afterPhoto: row.beforePhoto,
+              beforePhotoPreview: row.afterPhotoPreview,
+              afterPhotoPreview: row.beforePhotoPreview
+            }
+          : row
+      )
+    );
+
+    toast({
+      title: "Photos Swapped",
+      description: "Before and after photos have been swapped",
     });
   };
 
@@ -1244,6 +1468,15 @@ const MultiRowDataEntry = () => {
                       <span className="hidden sm:inline">{isHidden ? 'Show' : 'Hide'}</span>
                     </Button>
                     <Button
+                      onClick={() => setIsViewMode(!isViewMode)}
+                      variant="outline"
+                      size="sm"
+                      className="border-teal-600 text-teal-600 hover:bg-teal-50 h-8 px-3 text-sm"
+                    >
+                      <Eye className="h-4 w-4 mr-1" />
+                      <span className="hidden sm:inline">{isViewMode ? 'Edit' : 'View'}</span>
+                    </Button>
+                    <Button
                       onClick={handleClearAll}
                       variant="outline"
                       disabled={isLoading || isSyncing}
@@ -1309,7 +1542,7 @@ const MultiRowDataEntry = () => {
 
       {/* Main Content Area - Enhanced */}
       <div className="flex-1 p-4">
-        {!isHidden && (
+        {!isHidden && !isViewMode && (
           <Card className="w-full bg-white shadow-2xl border-0 rounded-2xl overflow-hidden">
             <CardHeader className="bg-gradient-to-r from-blue-600 via-purple-600 to-blue-600 text-white p-6">
               <div className="flex items-center justify-between">
@@ -1345,7 +1578,7 @@ const MultiRowDataEntry = () => {
                       SR No
                     </div>
                     <div className="p-4 border-r border-gray-300 font-semibold text-sm text-center">
-                      Part Name
+                      Part Number
                     </div>
                     <div className="p-4 border-r border-gray-300 font-semibold text-sm text-center">
                       Operation Number
@@ -1388,6 +1621,8 @@ const MultiRowDataEntry = () => {
                         handleAfterPhotoChange={handleAfterPhotoChange}
                         handleSaveRow={handleSaveRow}
                         handleDeleteRow={handleDeleteRow}
+                        handleDeletePhoto={handleDeletePhoto}
+                        handleSwapPhotos={handleSwapPhotos}
                         rowRef={newRowRef}
                         onImagePreview={handleImagePreview}
                         onTextPreview={handleTextPreview}
@@ -1398,6 +1633,221 @@ const MultiRowDataEntry = () => {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Clean View Mode */}
+        {!isHidden && isViewMode && (
+          <div className="space-y-6">
+            {/* View Mode Header */}
+            <div className="bg-gradient-to-r from-teal-600 via-blue-600 to-teal-600 text-white p-6 rounded-2xl shadow-xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                    <Eye className="h-6 w-6 text-white" />
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-bold text-white">
+                      Clean View Mode
+                    </h2>
+                    <p className="text-teal-100 text-sm">
+                      Click on any content or image to zoom and view details
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <Badge className="bg-white/20 text-white border-white/30 px-4 py-2">
+                    {filteredRows.length} Records
+                  </Badge>
+                  <Button
+                    onClick={() => setIsViewMode(false)}
+                    variant="outline"
+                    className="bg-white/20 border-white/30 text-white hover:bg-white/30"
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to Edit
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* Clean View Cards */}
+            <div className="space-y-4">
+              {filteredRows.map((row, index) => (
+                <Card key={row.id} className="w-full bg-white shadow-lg border border-gray-200 rounded-xl overflow-hidden hover:shadow-xl transition-shadow">
+                  <CardContent className="p-6">
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      
+                      {/* Left Column - Basic Info */}
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2 mb-4">
+                          <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
+                            {index + 1}
+                          </div>
+                          <h3 className="text-lg font-semibold text-gray-800">Entry {index + 1}</h3>
+                          <Badge variant={row.status === 'completed' ? 'default' : 'secondary'} className="ml-auto">
+                            {row.status}
+                          </Badge>
+                        </div>
+                        
+                        <div className="space-y-3">
+                          <div className="group">
+                            <label className="text-sm font-medium text-gray-600 block mb-1">SR No</label>
+                            <div 
+                              className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                              onClick={() => handleTextPreview(row.srno, 'SR No', row.id, 'srno')}
+                            >
+                              <p className="text-sm text-gray-800">{row.srno || <span className="text-gray-400 italic">Not specified</span>}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="group">
+                            <label className="text-sm font-medium text-gray-600 block mb-1">Part Number</label>
+                            <div 
+                              className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                              onClick={() => handleTextPreview(row.partName, 'Part Number', row.id, 'partName')}
+                            >
+                              <p className="text-sm text-gray-800">{row.partName || <span className="text-gray-400 italic">Not specified</span>}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="group">
+                            <label className="text-sm font-medium text-gray-600 block mb-1">Operation Number</label>
+                            <div 
+                              className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                              onClick={() => handleTextPreview(row.opNumber, 'Operation Number', row.id, 'opNumber')}
+                            >
+                              <p className="text-sm text-gray-800">{row.opNumber || <span className="text-gray-400 italic">Not specified</span>}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Middle Column - Details */}
+                      <div className="space-y-4">
+                        <div className="group">
+                          <label className="text-sm font-medium text-gray-600 block mb-1">Observation</label>
+                          <div 
+                            className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors min-h-[80px]"
+                            onClick={() => handleTextPreview(row.observation, 'Observation', row.id, 'observation')}
+                          >
+                            <p className="text-sm text-gray-800 whitespace-pre-wrap">{row.observation || <span className="text-gray-400 italic">No observation recorded</span>}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="group">
+                          <label className="text-sm font-medium text-gray-600 block mb-1">Action Plan</label>
+                          <div 
+                            className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors min-h-[80px]"
+                            onClick={() => handleTextPreview(row.actionPlan, 'Action Plan', row.id, 'actionPlan')}
+                          >
+                            <p className="text-sm text-gray-800 whitespace-pre-wrap">{row.actionPlan || <span className="text-gray-400 italic">No action plan specified</span>}</p>
+                          </div>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="group">
+                            <label className="text-sm font-medium text-gray-600 block mb-1">Responsibility</label>
+                            <div 
+                              className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                              onClick={() => handleTextPreview(row.responsibility, 'Responsibility', row.id, 'responsibility')}
+                            >
+                              <p className="text-sm text-gray-800">{row.responsibility || <span className="text-gray-400 italic">Unassigned</span>}</p>
+                            </div>
+                          </div>
+                          
+                          <div className="group">
+                            <label className="text-sm font-medium text-gray-600 block mb-1">Remarks</label>
+                            <div 
+                              className="p-3 bg-gray-50 rounded-lg border cursor-pointer hover:bg-gray-100 transition-colors"
+                              onClick={() => handleTextPreview(row.remarks, 'Remarks', row.id, 'remarks')}
+                            >
+                              <p className="text-sm text-gray-800">{row.remarks || <span className="text-gray-400 italic">No remarks</span>}</p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right Column - Photos */}
+                      <div className="space-y-4">
+                        <div className="group">
+                          <label className="text-sm font-medium text-gray-600 block mb-1">Before Photo</label>
+                          <div className="bg-gray-50 rounded-lg border p-4 min-h-[120px] flex items-center justify-center">
+                            {row.beforePhotoPreview ? (
+                              <div 
+                                className="relative cursor-pointer group hover:scale-105 transition-transform"
+                                onClick={() => handleImagePreview(row.beforePhotoPreview, 'before', row.id)}
+                              >
+                                <img
+                                  src={row.beforePhotoPreview}
+                                  alt="Before"
+                                  className="w-24 h-24 object-cover rounded-lg shadow-md"
+                                />
+                                <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-1 rounded-full">
+                                  BEFORE
+                                </div>
+                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg flex items-center justify-center transition-all">
+                                  <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover:opacity-100" />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-center text-gray-400">
+                                <Camera className="h-8 w-8 mx-auto mb-2" />
+                                <p className="text-sm">No before photo</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        <div className="group">
+                          <label className="text-sm font-medium text-gray-600 block mb-1">After Photo</label>
+                          <div className="bg-gray-50 rounded-lg border p-4 min-h-[120px] flex items-center justify-center">
+                            {row.afterPhotoPreview ? (
+                              <div 
+                                className="relative cursor-pointer group hover:scale-105 transition-transform"
+                                onClick={() => handleImagePreview(row.afterPhotoPreview, 'after', row.id)}
+                              >
+                                <img
+                                  src={row.afterPhotoPreview}
+                                  alt="After"
+                                  className="w-24 h-24 object-cover rounded-lg shadow-md"
+                                />
+                                <div className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full">
+                                  AFTER
+                                </div>
+                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 rounded-lg flex items-center justify-center transition-all">
+                                  <ZoomIn className="h-6 w-6 text-white opacity-0 group-hover:opacity-100" />
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-center text-gray-400">
+                                <Camera className="h-8 w-8 mx-auto mb-2" />
+                                <p className="text-sm">No after photo</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {filteredRows.length === 0 && (
+              <div className="text-center py-12">
+                <FileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-600 mb-2">No Data to Display</h3>
+                <p className="text-gray-500">Add some entries to see them in view mode.</p>
+                <Button
+                  onClick={() => setIsViewMode(false)}
+                  className="mt-4 bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Go to Edit Mode
+                </Button>
+              </div>
+            )}
+          </div>
         )}
 
         {/* Hidden State Message */}
@@ -1423,15 +1873,38 @@ const MultiRowDataEntry = () => {
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
         <DialogContent className="max-w-3xl">
           <DialogHeader>
-            <DialogTitle>Image Preview</DialogTitle>
+            <DialogTitle className="flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Camera className="h-5 w-5" />
+                {previewImage?.type === 'before' ? 'Before' : 'After'} Photo Preview
+              </span>
+              {previewImage && (
+                <Button
+                  onClick={handleDownloadImage}
+                  variant="outline"
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white border-blue-600"
+                >
+                  <Download className="h-4 w-4 mr-2" />
+                  Download
+                </Button>
+              )}
+            </DialogTitle>
           </DialogHeader>
           {previewImage && (
-            <div className="flex justify-center">
-              <img 
-                src={previewImage} 
-                alt="Preview" 
-                className="max-w-full max-h-[70vh] object-contain rounded-lg"
-              />
+            <div className="space-y-4">
+              <div className="flex justify-center">
+                <img 
+                  src={previewImage.url} 
+                  alt="Preview" 
+                  className="max-w-full max-h-[70vh] object-contain rounded-lg shadow-lg"
+                />
+              </div>
+              <div className="flex justify-center">
+                <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                  {previewImage.type === 'before' ? 'Before' : 'After'} Photo • Row {previewImage.rowId}
+                </div>
+              </div>
             </div>
           )}
         </DialogContent>
@@ -1443,21 +1916,46 @@ const MultiRowDataEntry = () => {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              {textPreview?.title}
+              Edit {textPreview?.title}
             </DialogTitle>
           </DialogHeader>
           {textPreview && (
             <div className="space-y-4">
-              <div className="p-4 bg-gray-50 rounded-lg border">
-                <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                  {textPreview.content || (
-                    <span className="text-gray-400 italic">No content available</span>
-                  )}
-                </div>
+              <div className="space-y-2">
+                <Label htmlFor="textContent" className="text-sm font-medium">
+                  Content
+                </Label>
+                <Textarea
+                  id="textContent"
+                  value={textPreview.content || ''}
+                  onChange={(e) => handleTextPreviewChange(e.target.value)}
+                  className="min-h-[200px] text-sm leading-relaxed resize-none"
+                  placeholder={`Enter ${textPreview.title.toLowerCase()}...`}
+                />
               </div>
               <div className="flex justify-between items-center text-xs text-gray-500">
                 <span>Length: {textPreview.content?.length || 0} characters</span>
-                <span>Click outside to close</span>
+                <span>Changes are saved automatically</span>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => setIsTextPreviewOpen(false)}
+                >
+                  Close
+                </Button>
+                <Button
+                  onClick={() => {
+                    setIsTextPreviewOpen(false);
+                    toast({
+                      title: "Content Updated",
+                      description: `${textPreview.title} has been updated successfully`,
+                    });
+                  }}
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  Done
+                </Button>
               </div>
             </div>
           )}

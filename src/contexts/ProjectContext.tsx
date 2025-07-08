@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
@@ -42,6 +42,45 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
 
+  // Load current project from localStorage on mount
+  useEffect(() => {
+    const savedProjectId = localStorage.getItem('currentProjectId');
+    if (savedProjectId && !currentProject) {
+      // Load the project details from the database
+      loadSavedProject(savedProjectId);
+    }
+  }, []);
+
+  const loadSavedProject = async (projectId: string) => {
+    try {
+      const { data, error } = await supabase
+        .from('projects')
+        .select('id, name, description, created_at, updated_at')
+        .eq('id', projectId)
+        .single();
+
+      if (error) {
+        // If project doesn't exist, clear from localStorage
+        localStorage.removeItem('currentProjectId');
+        return;
+      }
+
+      setCurrentProject(data);
+    } catch (error) {
+      console.error('Error loading saved project:', error);
+      localStorage.removeItem('currentProjectId');
+    }
+  };
+
+  const setCurrentProjectWithPersistence = (project: Project | null) => {
+    setCurrentProject(project);
+    if (project) {
+      localStorage.setItem('currentProjectId', project.id);
+    } else {
+      localStorage.removeItem('currentProjectId');
+    }
+  };
+
   const loadProjects = async () => {
     setIsLoading(true);
     try {
@@ -83,7 +122,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
       if (error) throw error;
       
       setProjects(prev => [data, ...prev]);
-      setCurrentProject(data);
+      setCurrentProjectWithPersistence(data);
       
       toast({
         title: "Success",
@@ -114,7 +153,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
 
       setProjects(prev => prev.filter(project => project.id !== id));
       if (currentProject?.id === id) {
-        setCurrentProject(null);
+        setCurrentProjectWithPersistence(null);
       }
       
       toast({
@@ -182,7 +221,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
 
       if (error) throw error;
       
-      setCurrentProject(data);
+      setCurrentProjectWithPersistence(data);
       
       toast({
         title: "Success",
@@ -204,7 +243,7 @@ export const ProjectProvider: React.FC<ProjectProviderProps> = ({ children }) =>
     <ProjectContext.Provider value={{
       currentProject,
       projects,
-      setCurrentProject,
+      setCurrentProject: setCurrentProjectWithPersistence,
       loadProjects,
       createProject,
       deleteProject,
