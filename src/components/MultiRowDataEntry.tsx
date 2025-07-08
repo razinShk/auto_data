@@ -11,6 +11,8 @@ import { supabase } from "@/integrations/supabase/client";
 import SimpleExcelUpload from "@/components/SimpleExcelUpload";
 import { generatePDF } from "@/utils/pdfExport";
 import { LocalStorageManager, LocalRowData } from "@/utils/localStorageManager";
+import { AutoCompleteInput } from "@/components/ui/autocomplete-input";
+import { AutoCompleteManager } from "@/utils/autoCompleteManager";
 import { Badge } from "@/components/ui/badge";
 import { DndProvider, useDrag, useDrop } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
@@ -182,10 +184,11 @@ const DraggableRow: React.FC<{
         {/* Part Number */}
         <div className="p-2 sm:p-3 border-r border-gray-300 flex items-center">
           <div className="flex-1 flex items-center gap-1">
-            <Input
-              type="text"
+            <AutoCompleteInput
               value={row.partName}
-              onChange={(e) => updateRow(row.id, 'partName', e.target.value)}
+              onChange={(value) => updateRow(row.id, 'partName', value)}
+              field="partName"
+
               className="w-full border-0 bg-transparent focus:ring-0 text-xs sm:text-sm p-1 sm:p-2"
               placeholder="Part Number"
             />
@@ -204,10 +207,10 @@ const DraggableRow: React.FC<{
         {/* Operation Number */}
         <div className="p-2 sm:p-3 border-r border-gray-300 flex items-center">
           <div className="flex-1 flex items-center gap-1">
-            <Input
-              type="text"
+            <AutoCompleteInput
               value={row.opNumber}
-              onChange={(e) => updateRow(row.id, 'opNumber', e.target.value)}
+              onChange={(value) => updateRow(row.id, 'opNumber', value)}
+              field="opNumber"
               className="w-full border-0 bg-transparent focus:ring-0 text-xs sm:text-sm p-1 sm:p-2"
               placeholder="Op Number"
             />
@@ -226,12 +229,14 @@ const DraggableRow: React.FC<{
         {/* Observation */}
         <div className="p-2 sm:p-3 border-r border-gray-300 flex items-center">
           <div className="flex-1 flex items-center gap-1">
-            <Textarea
+            <AutoCompleteInput
               value={row.observation}
-              onChange={(e) => updateRow(row.id, 'observation', e.target.value)}
+              onChange={(value) => updateRow(row.id, 'observation', value)}
+              field="observation"
+              type="textarea"
+              rows={2}
               className="w-full border-0 bg-transparent focus:ring-0 text-xs sm:text-sm p-1 sm:p-2 min-h-[40px] sm:min-h-[50px] resize-none"
               placeholder="Observation"
-              rows={2}
             />
             <Button
               variant="ghost"
@@ -430,12 +435,14 @@ const DraggableRow: React.FC<{
         {/* Action Plan */}
         <div className="p-2 sm:p-3 border-r border-gray-300 flex items-center">
           <div className="flex-1 flex items-center gap-1">
-            <Textarea
+            <AutoCompleteInput
               value={row.actionPlan}
-              onChange={(e) => updateRow(row.id, 'actionPlan', e.target.value)}
+              onChange={(value) => updateRow(row.id, 'actionPlan', value)}
+              field="actionPlan"
+              type="textarea"
+              rows={2}
               className="w-full border-0 bg-transparent focus:ring-0 text-xs sm:text-sm p-1 sm:p-2 min-h-[40px] sm:min-h-[50px] resize-none"
               placeholder="Action Plan"
-              rows={2}
             />
             <Button
               variant="ghost"
@@ -452,10 +459,10 @@ const DraggableRow: React.FC<{
         {/* Responsibility */}
         <div className="p-2 sm:p-3 border-r border-gray-300 flex items-center">
           <div className="flex-1 flex items-center gap-1">
-            <Input
-              type="text"
+            <AutoCompleteInput
               value={row.responsibility}
-              onChange={(e) => updateRow(row.id, 'responsibility', e.target.value)}
+              onChange={(value) => updateRow(row.id, 'responsibility', value)}
+              field="responsibility"
               className="w-full border-0 bg-transparent focus:ring-0 text-xs sm:text-sm p-1 sm:p-2"
               placeholder="Responsibility"
             />
@@ -474,12 +481,14 @@ const DraggableRow: React.FC<{
         {/* Remarks */}
         <div className="p-2 sm:p-3 border-r border-gray-300 flex items-center">
           <div className="flex-1 flex items-center gap-1">
-            <Textarea
+            <AutoCompleteInput
               value={row.remarks}
-              onChange={(e) => updateRow(row.id, 'remarks', e.target.value)}
+              onChange={(value) => updateRow(row.id, 'remarks', value)}
+              field="remarks"
+              type="textarea"
+              rows={2}
               className="w-full border-0 bg-transparent focus:ring-0 text-xs sm:text-sm p-1 sm:p-2 min-h-[40px] sm:min-h-[50px] resize-none"
               placeholder="Remarks"
-              rows={2}
             />
             <Button
               variant="ghost"
@@ -639,6 +648,7 @@ const MultiRowDataEntry = () => {
   // Load existing entries when project changes
   useEffect(() => {
     if (currentProject) {
+      AutoCompleteManager.setCurrentProject(currentProject.id);
       loadProjectEntries();
       loadLocalStorageEntries();
     }
@@ -704,6 +714,9 @@ const MultiRowDataEntry = () => {
         if (hasOnlyEmptyRow || rows.length === 0) {
           setRows(mappedRows);
         }
+        
+        // Initialize AutoComplete suggestions from local storage data
+        AutoCompleteManager.initializeFromExistingData(localEntries, currentProject.id);
         
         setUnsyncedCount(localEntries.length);
         
@@ -875,6 +888,9 @@ const MultiRowDataEntry = () => {
           status: (entry.status as 'pending' | 'completed') || 'pending'
         }));
         setRows(loadedRows);
+        
+        // Initialize AutoComplete suggestions from loaded data
+        AutoCompleteManager.initializeFromExistingData(loadedRows, currentProject.id);
       } else {
         // If no data from database, keep existing rows or set empty row
         if (rows.length === 0) {
@@ -1070,8 +1086,8 @@ const MultiRowDataEntry = () => {
   const addRow = () => {
     // Generate a more unique ID to prevent conflicts
     const newRowId = `local-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-    setRows(prevRows => [
-      ...prevRows,
+    const updatedRows = [
+      ...rows,
       {
         id: newRowId,
         srno: '',
@@ -1086,8 +1102,12 @@ const MultiRowDataEntry = () => {
         beforePhotoPreview: '',
         afterPhotoPreview: '',
         status: 'pending'
-      }
-    ]);
+      } as RowData
+    ];
+    setRows(updatedRows);
+
+    // Update AutoComplete database entries with current rows
+    AutoCompleteManager.setDatabaseEntries(updatedRows);
 
     // Auto-scroll to the new row after a short delay
     setTimeout(() => {
@@ -1099,7 +1119,11 @@ const MultiRowDataEntry = () => {
   };
 
   const removeRow = (id: string) => {
-    setRows(prevRows => prevRows.filter(row => row.id !== id));
+    const updatedRows = rows.filter(row => row.id !== id);
+    setRows(updatedRows);
+    
+    // Update AutoComplete database entries with current rows
+    AutoCompleteManager.setDatabaseEntries(updatedRows);
     
     // Also remove from local storage
     if (currentProject) {
@@ -1108,11 +1132,13 @@ const MultiRowDataEntry = () => {
   };
 
   const updateRow = (id: string, field: keyof RowData, value: string) => {
-    setRows(prevRows =>
-      prevRows.map(row =>
-        row.id === id ? { ...row, [field]: value } : row
-      )
+    const updatedRows = rows.map(row =>
+      row.id === id ? { ...row, [field]: value } : row
     );
+    setRows(updatedRows);
+    
+    // Update AutoComplete database entries with current rows
+    AutoCompleteManager.setDatabaseEntries(updatedRows);
   };
 
   const handleBeforePhotoChange = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1291,6 +1317,12 @@ const MultiRowDataEntry = () => {
     }));
 
     setRows(prev => [...prev, ...newRows]);
+    
+    // Initialize AutoComplete suggestions from imported data
+    if (currentProject) {
+      AutoCompleteManager.initializeFromExistingData(newRows, currentProject.id);
+    }
+    
     toast({
       title: "Excel Data Imported",
       description: `Added ${newRows.length} entries from Excel file`,
@@ -1626,6 +1658,7 @@ const MultiRowDataEntry = () => {
                         rowRef={newRowRef}
                         onImagePreview={handleImagePreview}
                         onTextPreview={handleTextPreview}
+
                       />
                     ))}
                   </DndProvider>
